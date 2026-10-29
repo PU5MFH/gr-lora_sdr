@@ -202,3 +202,10 @@ This work was inspired from [https://github.com/rpp0/gr-lora](https://github.com
 
 ## Licence
 Distributed under the GPL-3.0 License License. See LICENSE for more information.
+
+### PU5MFH experimental standalone receiver
+
+This fork includes an independent CF32 streaming receiver and a same-IQ lorarx
+comparison tool under [standalone/](standalone/README.md). It targets SF8/BW62.5 kHz
+and accepts RSP1 or RTL-SDR IQ rates without GNU Radio. Its synchronization is
+simplified and is **not equivalent to the full upstream EPFL receiver**.
