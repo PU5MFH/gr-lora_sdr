@@ -159,3 +159,17 @@ SHA256 cf57c676cde3301ac828602b4b3e399324a5420d576421a71c769aa84b80d359.
 Não existia gravação do IQ daquele quadro real perdido pelo experimental;
 portanto a reprodução comprova um defeito de sensibilidade, não prova que ele
 foi a única causa da perda anterior. Sincronização própria ainda difere da EPFL.
+
+### 2026-10-29: FFT reference caching
+
+The standalone C++ receiver now computes its fixed 256-sample chirp reference
+once per FFT instance, rather than calling sin/cos for every search window.
+The zero-CFO acquisition path also skips the identity frequency rotation.
+Nonzero CFO correction is unchanged. Tests now explicitly cover 1000000 S/s,
+in addition to 500000 and 1024000, including identical-IQ comparison with lorarx.
+All synthetic CRC, corrupted CRC, weak-signal, noise-only and stream tests pass.
+An 8-second seeded noise input at 1 MS/s took 1.154 s before and 1.104 s after
+(single runs, not a statistically controlled performance claim); diagnostic
+counters were identical. This is an efficiency correction, not proof of fixing
+SDR input overflows. The previous overflow happened during APT/lorarx comparison,
+without this experimental executable running. No Python automatic restart was deployed.

@@ -88,7 +88,7 @@ def run(rate,corrupt=False,offset=0,cr=8):
     print(f'PASS rate={rate} offset={offset} cr={cr} corrupt={corrupt}')
 
 if __name__=='__main__':
-    for rate in (500000,1024000):
+    for rate in (500000,1000000,1024000):
         run(rate,offset=-125000)
         run(rate,corrupt=True,offset=-125000)
     for cr in (6,7): run(500000,cr=cr)
@@ -99,7 +99,7 @@ if __name__=='__main__':
     import tempfile
     lorarx=pathlib.Path('/opt/meshcoresdr/lorarx/bin/lorarx')
     if lorarx.exists():
-        for rate in (500000,1024000):
+        for rate in (500000,1000000,1024000):
             expected,iq=fixture(rate,offset=-125000)
             with tempfile.TemporaryDirectory() as d:
                 subprocess.run(['python3',str(ROOT/'compare.py'),'--sample-rate',str(rate),'--output-dir',d],input=iq,capture_output=True,check=True,timeout=60)

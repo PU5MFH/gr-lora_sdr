@@ -28,13 +28,17 @@ C ph(double a){return C(std::cos(a),std::sin(a));}
 struct FFT {
  kiss_fft_cfg cfg=kiss_fft_alloc(N,0,nullptr,nullptr);
  std::array<kiss_fft_cpx,N> in{},out{};
- FFT(){if(!cfg)throw std::runtime_error("FFT allocation failed");}
+ std::array<C,N> refs{};
+ FFT(){
+  if(!cfg)throw std::runtime_error("FFT allocation failed");
+  for(int i=0;i<N;i++){double t=i;refs[i]=ph(2*PI*(t*t/(2*N)-t/2));}
+ }
  ~FFT(){free(cfg);}
  std::array<double,N> powers(const std::vector<C>& x,size_t p,bool down,double cfo=0) {
   for(int i=0;i<N;i++){
-   double t=i;
-   C ref=ph(2*PI*(t*t/(2*N)-t/2));
-   C v=x[p+i*OS]*(down?ref:std::conj(ref))*ph(-2*PI*cfo*t/N);
+   C ref=refs[i];
+   C v=x[p+i*OS]*(down?ref:std::conj(ref));
+   if(cfo!=0)v*=ph(-2*PI*cfo*i/N);
    in[i]={v.real(),v.imag()};
   }
   kiss_fft(cfg,in.data(),out.data());
