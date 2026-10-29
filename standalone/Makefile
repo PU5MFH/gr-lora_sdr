@@ -9,6 +9,7 @@ build/meshcore-epfl-rx: receiver.cpp build/kiss_fft.o
 	$(CXX) $(CXXFLAGS) -I../lib receiver.cpp build/kiss_fft.o -o $@
 check: all
 	python3 test_receiver.py
+	python3 test_weak_signal.py
 clean:
 	rm -rf build
 .PHONY: all check clean

@@ -130,3 +130,32 @@ O JSON upstream lorarx escreve net em decimal: net=18 representa 0x12, não 0x18
 O meshcoreSDR passou a aceitar --parallel-decoder no capturador comum RSP1/RTL. A integração usa fila não bloqueante de até 2 MiB e encerra somente o experimental em atraso, saída inválida ou perda de continuidade IQ. O lorarx permanece como único decoder que alimenta MQTT/companion. Logs live-epfl.jsonl em /var/log/meshcoresdr/epfl-comparison, 2 MiB mais dois backups; início/fim possuem sessão, taxa, argumentos e motivo de eventual encerramento.
 
 Primeira tentativa ao vivo em 2026-10-29T00:55:34Z encerrou o experimental por fila cheia. O front-end recalculava seno/cosseno dos coeficientes por amostra; substituído por banco de 1024 fases normalizadas calculado na inicialização. Testes sintéticos repetidos nas duas taxas passaram. Nova sessão ao vivo iniciada em 2026-10-29T00:56:34Z, RSP1 a 500000 S/s. Não houve mudança de taxa no hardware. O desempenho com RTL físico ainda não foi testado.
+
+## Investigação da ausência de quadros (2026-10-29 UTC)
+
+A versão inicial só havia sido validada com sinais sintéticos fortes. Em teste
+reproduzível com AWGN (seed 187, parâmetro de SNR nominal -8 dB referido ao BW),
+lorarx recuperou um payload correto e o experimental não chegou ao cabeçalho.
+Diagnóstico: preâmbulos detectados, zero candidatos SFD. A implementação própria
+impunha pico/energia total >=0,06 em ambos os downchirps, um corte arbitrário
+que não existe dessa forma no frame_sync da EPFL. Também removido o corte
+arbitrário de 0,04 nos upchirps; mantida exclusão de energia nula, repetição de
+bins, validação de sync, checksum de cabeçalho e CRC do payload.
+
+Após a correção, o mesmo IQ seeded recupera exatamente o payload e passa CRC.
+Incluído test_weak_signal.py e cenário só de ruído, sem pacote válido nesse
+cenário. Não interpretar esse parâmetro de SNR como igual ao SNR reportado pelo
+lorarx; não é medição calibrada nem curva de sensibilidade. Um cenário de -10,7 dB
+com a mesma construção falhou em ambos na investigação anterior.
+
+A cada 60 s de processamento, o experimental agora emite JSON event=diagnostics
+com janelas, tentativas de preâmbulo/SFD/sync, tentativas de cabeçalho, checksum
+aceito, payloads e CRC válido. No EOF, emite o mesmo resumo no stderr. Contadores
+de tentativa podem contar reprocessamento enquanto se aguarda mais IQ, não são
+contagens de transmissões únicas. Não são registros de quadros no coletor.
+
+Versão corrigida ativada em 2026-10-29T01:05:56Z (22:05:56 UTC-3 em 28/10),
+SHA256 cf57c676cde3301ac828602b4b3e399324a5420d576421a71c769aa84b80d359.
+Não existia gravação do IQ daquele quadro real perdido pelo experimental;
+portanto a reprodução comprova um defeito de sensibilidade, não prova que ele
+foi a única causa da perda anterior. Sincronização própria ainda difere da EPFL.

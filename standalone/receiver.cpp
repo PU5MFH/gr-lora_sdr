@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <complex>
 #include <cstdint>
 #include <cstring>
@@ -96,6 +97,7 @@ struct Decoder {
  FFT fft;
  std::vector<C> x;
  size_t scan=0;uint64_t base=0,id=0,headers=0,valid=0;
+ uint64_t windows=0,preambles=0,sfds=0,syncs=0,head_trials=0,head_ok=0;
  double frequency;
  explicit Decoder(double f):frequency(f){}
  // Return 0 while waiting for more IQ, 1 when examined/rejected.
@@ -103,8 +105,10 @@ struct Decoder {
   if(start+8*NS>=x.size())return 0;
   std::vector<LLR> symbols;
   for(int i=0;i<8;i++)symbols.push_back(llrs(fft.powers(x,start+i*NS,false,cfo),true));
+  head_trials++;
   auto h=fec(symbols,true,8);
   if(!header_ok(h))return 1;
+  head_ok++;
   int len=h[0]*16+h[1],cr=(h[2]>>1)+4;bool hascrc=h[2]&1;
   if(len<2||len>255||cr<5||cr>8||!hascrc)return 1;
   size_t need=(len+2)*2;
@@ -133,24 +137,28 @@ struct Decoder {
  }
  void process(){
   while(scan+7*NS<x.size()){
+   windows++;
    auto a=fft.powers(x,scan,false);int k=peak(a);
-   if(strength(a)<0.04){scan+=NS;continue;}
+   if(strength(a)==0){scan+=NS;continue;}
    int count=1;
    for(int n=1;n<5;n++){
     auto b=fft.powers(x,scan+n*NS,false);
-    if(std::abs(signed_bin(mod(peak(b)-k,N)))<=1&&strength(b)>=0.04)count++;else break;
+    if(std::abs(signed_bin(mod(peak(b)-k,N)))<=1&&strength(b)>0)count++;else break;
    }
    if(count<5){scan+=NS;continue;}
    // Search sync and SFD after the detected preamble; support extended preambles.
+   preambles++;
    bool wait=false,done=false;
    for(int n=5;n<80;n++){
     size_t pos=scan+n*NS;
     if(pos+4*NS>=x.size()){wait=true;break;}
     auto d=fft.powers(x,pos,true);
-    if(strength(d)<0.06)continue;
+    // Do not impose a peak/total-energy cutoff here: weak SFD chirps
+    // can be below the former arbitrary 6% gate. Confirm via sync + header.
     int kd=peak(d);
     auto d2=fft.powers(x,pos+NS,true);
-    if(strength(d2)<0.06||std::abs(signed_bin(mod(peak(d2)-kd,N)))>1)continue;
+    if(std::abs(signed_bin(mod(peak(d2)-kd,N)))>1)continue;
+    sfds++;
     // Up/down peaks separate timing offset from CFO. Resolve modulo ambiguity
     // by requiring CFO within BW/4 (the channel passband).
     int sum=signed_bin(mod(k+kd,N));double cfo=sum/2.0;
@@ -172,6 +180,7 @@ struct Decoder {
      }
     }
     if(!sync_ok)continue;
+    syncs++;
     size_t payload=downstart+2*NS+NS/4;
     if(!attempt(payload,cfo)){wait=true;break;}
     scan=payload;done=true;break;
@@ -180,6 +189,11 @@ struct Decoder {
    if(!done)scan+=NS;
   }
   if(scan>128*NS){x.erase(x.begin(),x.begin()+scan);base+=scan;scan=0;}
+ }
+ void diagnostics(std::ostream& out){
+  out<<"{\"event\":\"diagnostics\",\"windows\":"<<windows<<",\"preamble_attempts\":"<<preambles
+     <<",\"sfd_attempts\":"<<sfds<<",\"sync_attempts\":"<<syncs<<",\"header_trials\":"<<head_trials
+     <<",\"header_checks_passed\":"<<head_ok<<",\"payloads\":"<<headers<<",\"crc_valid\":"<<valid<<"}"<<std::endl;
  }
  void feed(C v){x.push_back(v);if(x.size()%4096==0)process();}
 };
@@ -230,13 +244,18 @@ int main(int argc,char** argv){
   }
   if(!std::isfinite(rate)||!std::isfinite(center)||!std::isfinite(freq)||rate<125000||rate>10000000||std::abs(freq-center)+40000>=rate/2)throw std::runtime_error("invalid IQ rate/channel bandwidth");
   Decoder rx(freq);Frontend front(rate,freq-center,rx);
+  auto reported=std::chrono::steady_clock::now();
   std::array<char,65536> raw{};size_t held=0;
   while(std::cin){std::cin.read(raw.data()+held,raw.size()-held);size_t n=held+std::cin.gcount();size_t whole=n/8*8;
    for(size_t i=0;i<whole;i+=8){float iq[2];std::memcpy(iq,raw.data()+i,8);if(!std::isfinite(iq[0])||!std::isfinite(iq[1]))throw std::runtime_error("nonfinite IQ");front.feed(C(iq[0],iq[1]));}
+   if(std::chrono::steady_clock::now()-reported>std::chrono::seconds(60)){
+    rx.diagnostics(std::cout);reported=std::chrono::steady_clock::now();
+   }
    held=n-whole;std::memmove(raw.data(),raw.data()+whole,held);
   }
   if(held)throw std::runtime_error("truncated CF32 sample");
   rx.process();
+  rx.diagnostics(std::cerr);
   std::cerr<<"headers="<<rx.headers<<" crc_valid="<<rx.valid<<"\n";
  }catch(const std::exception& e){std::cerr<<e.what()<<"\n";return 1;}
 }
