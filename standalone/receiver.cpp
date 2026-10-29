@@ -188,20 +188,33 @@ struct Decoder {
 struct Frontend {
  double rate,offset,phase=0,step,next=32;uint64_t base=0;
  std::vector<C> data;Decoder& rx;
- Frontend(double r,double o,Decoder& d):rate(r),offset(o),step(r/RATE),rx(d){}
+ std::array<std::array<float,64>,1024> kernels{};
+ Frontend(double r,double o,Decoder& d):rate(r),offset(o),step(r/RATE),rx(d){
+  const double fc=40000/rate;
+  for(int phase=0;phase<1024;phase++){
+   double norm=0;
+   for(int j=-31;j<=32;j++){
+    double t=j-double(phase)/1024;
+    double w=(std::abs(t)<1e-10?2*fc:std::sin(2*PI*fc*t)/(PI*t))*(0.5+0.5*std::cos(PI*t/32));
+    kernels[phase][j+31]=float(w);norm+=w;
+   }
+   for(auto& w:kernels[phase])w/=float(norm);
+  }
+ }
  void feed(C v){
   v*=ph(phase);phase=std::remainder(phase-2*PI*offset/rate,2*PI);data.push_back(v);
   constexpr int taps=64;
   while(next+taps/2<base+data.size()){
-   int64_t mid=int64_t(std::floor(next));C sum{};double norm=0;
-   // 40 kHz cutoff preserves the 62.5 kHz channel with a transition band.
-   double fc=40000/rate;
-   for(int j=-taps/2+1;j<=taps/2;j++){
-    double t=mid+j-next;
-    double w=(std::abs(t)<1e-10?2*fc:std::sin(2*PI*fc*t)/(PI*t))*(0.5+0.5*std::cos(PI*t/(taps/2)));
-    sum+=data[size_t(mid+j-base)]*float(w);norm+=w;
+   int64_t mid=int64_t(std::floor(next));
+   int phase_index=std::min(1023,int((next-mid)*1024));
+   const auto& weights=kernels[phase_index];
+   float real=0,imag=0;
+   size_t first=size_t(mid-31-base);
+   for(int j=0;j<64;j++){
+    real+=data[first+j].real()*weights[j];
+    imag+=data[first+j].imag()*weights[j];
    }
-   rx.feed(sum/float(norm));next+=step;
+   rx.feed(C(real,imag));next+=step;
   }
   if(data.size()>4096){size_t remove=size_t(std::floor(next))-base-32;data.erase(data.begin(),data.begin()+remove);base+=remove;}
  }

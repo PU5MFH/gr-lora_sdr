@@ -35,7 +35,7 @@ se a origem é SDRplay, RTL-SDR ou arquivo sintético.
 O front-end próprio desloca o canal, filtra e reamostra para **250000 S/s internos**
 (4×BW). Isso não altera a taxa do hardware. O lorarx recebe o IQ original, na taxa
 original. A sincronização reduz a resolução usada pela FFT para 256 pontos/símbolo.
-FIR de interpolação: 64 taps, janela Hann, corte de 40 kHz; sua rejeição de
+FIR de interpolação: 64 taps, janela Hann, corte de 40 kHz, banco de 1024 fases pré-calculadas; sua rejeição de
 interferências e custo na placa ainda precisam de avaliação com RF real.
 
 Configuração inicial fixa: SF8, BW62500 Hz, sync 0x12, cabeçalho explícito e CRC
@@ -124,3 +124,9 @@ Nada desta adaptação envia ao MQTT ou companion, instala serviços ou troca
 ## Correção de interpretação do sync
 
 O JSON upstream lorarx escreve net em decimal: net=18 representa 0x12, não 0x18. Esta adaptação usa 0x12 (chirps de sync 8 e 16). A afirmação anterior na conversa de que net=18 seria hexadecimal estava incorreta. O coletor meshcoreSDR já compara o inteiro decimal 18 e não precisou mudar.
+
+## Integração ao capturador em produção
+
+O meshcoreSDR passou a aceitar --parallel-decoder no capturador comum RSP1/RTL. A integração usa fila não bloqueante de até 2 MiB e encerra somente o experimental em atraso, saída inválida ou perda de continuidade IQ. O lorarx permanece como único decoder que alimenta MQTT/companion. Logs live-epfl.jsonl em /var/log/meshcoresdr/epfl-comparison, 2 MiB mais dois backups; início/fim possuem sessão, taxa, argumentos e motivo de eventual encerramento.
+
+Primeira tentativa ao vivo em 2026-10-29T00:55:34Z encerrou o experimental por fila cheia. O front-end recalculava seno/cosseno dos coeficientes por amostra; substituído por banco de 1024 fases normalizadas calculado na inicialização. Testes sintéticos repetidos nas duas taxas passaram. Nova sessão ao vivo iniciada em 2026-10-29T00:56:34Z, RSP1 a 500000 S/s. Não houve mudança de taxa no hardware. O desempenho com RTL físico ainda não foi testado.
